@@ -3,14 +3,16 @@
 use strict;
 use warnings;
 use Getopt::Long;
-#require "/home/chengf/bin/perl_subs.pl";
+require "/data/chengf/bin/perl_subs.pl";
 
 my $gff = $ARGV[0];  #-gff--
 my $genoRef = $ARGV[1];
-my $out1 = $gff.".repr";
-my $out11 = $gff.".repr.position";
-my $out2 = $gff.".repr.cds";
-my $out3 = $gff.".repr.pep";
+my $tgf = $gff;
+$tgf =~ s/^.*\///;
+my $out1 = $tgf.".repr";
+my $out11 = $tgf.".repr.position";
+my $out2 = $tgf.".repr.cds";
+my $out3 = $tgf.".repr.pep";
 #system("awk '($3=="mRNA" || $3=="CDS")' $gff > $gff.temp");
 #system("mv $gff.temp $gff");
 
@@ -32,17 +34,17 @@ sub process {
   my %sca2seq;
   &readGenoFas($genoRef,\%sca2seq);
 
-  my (%mrna2cdsNum,%mrna2orient,%mrna2cdsPos,%gene2mrna);
-  &readGff($gff,\%mrna2cdsNum,\%mrna2orient,\%mrna2cdsPos,\%gene2mrna);
+  my (%mrna2cdsNum,%mrna2orient,%mrna2cdsPos,%gene2mrna,%mrna2len);
+  &readGff($gff,\%mrna2cdsNum,\%mrna2orient,\%mrna2cdsPos,\%gene2mrna,\%mrna2len);
 
   &sortCDS(\%mrna2cdsPos);
 
-  &getSeq($gff,\%mrna2cdsPos,\%mrna2orient,\%mrna2cdsNum,\%gene2mrna,\%sca2seq,$out1,$out11,$out2,$out3);
+  &getSeq($gff,\%mrna2cdsPos,\%mrna2orient,\%mrna2cdsNum,\%gene2mrna,\%sca2seq,$out1,$out11,$out2,$out3,\%mrna2len);
 
 }
 
 sub getSeq {
-  my ($in,$mrna2cdsPos,$mrna2orient,$mrna2cdsNum,$gene2mrna,$sca2seq,$out1,$out11,$out2,$out3) = @_;
+  my ($in,$mrna2cdsPos,$mrna2orient,$mrna2cdsNum,$gene2mrna,$sca2seq,$out1,$out11,$out2,$out3,$mrna2len) = @_;
 
   my %mrna2repr;
   my ($gene,$mrna);
@@ -68,12 +70,18 @@ sub getSeq {
       #/ID=gene:([^;\n,]+)/;           #-depends--
     elsif(/\tmRNA\t/) {           #-depends--
       #/mRNA ([^;\n,\s]+)/;           #-depends--
+      #/ID=mRNA:([^;\n,]+)/;           #-depends--
       /ID=([^;\n,]+)/;           #-depends--
       #/Name=([^;\n,]+)/;           #-depends--
       $mrna = $1;
       if(exists($mrna2repr{$mrna})) {
         print $FW $_;
-        print $FW0 "$mrna\t$temp[0]\t$temp[3]\t$temp[4]\t$temp[6]\n";
+        print $FW0 "$mrna\t$temp[0]\t$temp[3]\t$temp[4]\t$temp[6]\t$mrna2cdsNum->{$mrna}\t$mrna2len->{$mrna}";
+        my $cdsPos = $mrna2cdsPos->{$mrna};
+        $cdsPos =~ s/^\w+,//;
+        $cdsPos =~ s/;\w+,/;/g;
+        $cdsPos =~ s/,/-/g;
+        print $FW0 "\t$cdsPos\n";
       }
     }
     elsif(/\tCDS\t/) {
@@ -97,8 +105,10 @@ sub getSeq {
   foreach my $mrna (sort keys %mrna2repr) {
     my $temp = $mrna2cdsPos->{$mrna};
     my @pos = split(/;/,$temp);
+    #my $np = @pos;
+    #print "$mrna\t$np\n";
     my $ori = $mrna2orient->{$mrna};
-    my $num = $mrna2cdsNum->{$mrna};
+    #my $num = $mrna2cdsNum->{$mrna};
     my ($sca,$seq);
     my $start = 0;
     my $stop = 0;
@@ -161,26 +171,29 @@ sub sortCDS {
 }
 
 sub readGff {
-  my ($in,$mrna2cdsNum,$mrna2orient,$mrna2cdsPos,$gene2mrna) = @_;
+  my ($in,$mrna2cdsNum,$mrna2orient,$mrna2cdsPos,$gene2mrna,$mrna2len) = @_;
 
   open(my $FR1,$in);
   my ($gene,$mrna);
-  my (%mrna2rec,%mrna2len);
+  my (%mrna2rec);
   while(<$FR1>) {
+    #s/\.Araport11\.447//g;
     #if(/\tgene\t/) {
       #/ID=gene:([^;\n]+)/;       #depends
     if(/\tmRNA\t/) {            #depends
       #/mRNA ([^;\n,\s]+)/;         #depends
+      #/ID=mRNA:([^;\n]+)/;         #depends
       /ID=([^;\n]+)/;         #depends
       #/Name=([^;\n]+)/;         #depends
       $mrna = $1;
-      #/Parent=gene:([^;\n]+)/;   #depends
+      #if(/Parent=gene:([^;\n]+)/) {        #depends
       if(/Parent=([^;\n]+)/) {        #depends
         $gene = $1;
       }
       else {
         $gene = $mrna;
       }
+      $gene = $1;
       $mrna2rec{$mrna} = $gene;
     }
     if(/\tCDS\t/) {
@@ -188,6 +201,7 @@ sub readGff {
       #if(/Parent=transcript:([^;\n]+)/) {   #-it depends----
       #if(/Parent=mRNA:([^;\n]+)/) {   #-it depends----
       #if(/CDS ([^;\n,\s]+)/) {   #-it depends----
+      #if(/Parent=mRNA:([^;\n,\s]+)/) {   #-it depends----
       if(/Parent=([^;\n,\s]+)/) {   #-it depends----
         $mrna = $1;
         if(exists($mrna2rec{$mrna})) {
@@ -197,12 +211,12 @@ sub readGff {
             $mrna2cdsPos->{$mrna} = $pos;
             $mrna2cdsNum->{$mrna} = 1;
             $mrna2orient->{$mrna} = $temp[6];
-            $mrna2len{$mrna} = $temp[4] - $temp[3] + 1;
+            $mrna2len->{$mrna} = $temp[4] - $temp[3] + 1;
           }
           else {
             $mrna2cdsPos->{$mrna} .= ";".$pos;
             $mrna2cdsNum->{$mrna} += 1;
-            $mrna2len{$mrna} += $temp[4] - $temp[3] + 1;
+            $mrna2len->{$mrna} += $temp[4] - $temp[3] + 1;
           }
         }
       }
@@ -217,7 +231,7 @@ sub readGff {
     }
     else {
       my $tmrna = $gene2mrna->{$gene};
-      if($mrna2len{$tmrna}<$mrna2len{$mrna}) {
+      if($mrna2len->{$tmrna}<$mrna2len->{$mrna}) {
         $gene2mrna->{$gene} = $mrna;
       }      
     }
@@ -242,4 +256,5 @@ sub readGenoFas {
   close($FR);
   print "Genome fas is OK!\n";
 }
+
 

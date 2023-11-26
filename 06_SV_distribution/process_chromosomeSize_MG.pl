@@ -5,36 +5,31 @@ use strict;
 #require "/home/chengf/bin/perl_subs.pl";
 
 my $in = $ARGV[0];
-my $out1 = $in.".known";
-my $out2 = $in.".unknown";
+my $out = $in.".chrSize";
+$out =~ s/^.*\///;
 
-&process($in,$out1,$out2);
+&process($in,$out);
 
 sub process {
-  my ($in,$out1,$out2) = @_;
+  my ($in,$out) = @_;
 
   my %sca2seq;
   &readFasta($in,\%sca2seq);
 
-  &output($out1,$out2,\%sca2seq);
+  &output($out,\%sca2seq);
 
+  system("sort -k2,2n $out > $out.sorted");
+  system("mv $out.sorted $out");
 }
 
 sub output {
-  my ($out1,$out2,$sca2seq) = @_;
-
-  open(my $FW1,">$out1");
-  open(my $FW2,">$out2");
+  my ($out,$sca2seq) = @_;
+  open(my $FW,">$out");
   foreach my $sca (sort {$a cmp $b} keys %$sca2seq) {
-    if($sca =~ /Unknown/) {
-      print $FW2 ">$sca\n$sca2seq->{$sca}\n";
-    }
-    else {
-      print $FW1 ">$sca\n$sca2seq->{$sca}\n";
-    }
+    my $len = length($sca2seq->{$sca});
+    print $FW "$sca\t$len\n";
   }
-  close($FW1);
-  close($FW2);
+  close($FW);
 }
 
 sub readFasta {
@@ -45,9 +40,6 @@ sub readFasta {
   while($_=<$SFR>) {
     if(/^>([^\s^\n]+)\s*\n*/) {
       $id = $1;
-      if(exists($id2seq->{$id})) {
-        print "$id\n";
-      }
       $id2seq->{$id} = "";
     }
     else {
@@ -57,5 +49,4 @@ sub readFasta {
   }
   close($SFR);
 }
-
 
